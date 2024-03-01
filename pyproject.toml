@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "yt2logseq"
+version = "0.1.0"
+description = "experiment to generate logseq notes from youtube videos with AI."
+authors = ["cmdoret <cmdoret@mailbox.org>"]
+license = "GPL-3.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+transformers = "^4.38"
+openai-whisper = "20231117"
+yt-dlp = "2023.12.30"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
