@@ -24,3 +24,7 @@ python yt2logseq/main.py <video-url> <output.md>
 # With logseq
 LOGSEQ_DIR=path/to/logseq/graph python yt2logseq/main.py <video-url> <output.md>
 ```
+
+## Example
+
+![example output](docs/docker-example.png)
