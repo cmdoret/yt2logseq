@@ -1,6 +1,6 @@
 # yt2logseq
 
-Experiment to autogenerate logseq notes from a youtube video using machine learning.
+Experiment to autogenerate [logseq](https://logseq.com/) notes from a youtube video using machine learning.
 
 The goal of this tool is to generate logseq notes with rich metadata and AI summary from a youtube video.
 
