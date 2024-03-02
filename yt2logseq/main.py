@@ -12,13 +12,13 @@ It relies on:
 
 import os
 from pathlib import Path
-import re
 import sys
+import tempfile
 from typing import Iterator, Optional
 
+from pytube import YouTube
 from transformers import pipeline
 import whisper
-import yt_dlp
 
 LOGSEQ_DIR=os.environ.get("LOGSEQ_DIR")
 MAX_KEYWORDS=3
@@ -46,47 +46,28 @@ def gather_logseq_topics(logseq_dir: Path) -> set[str]:
     return topics
 
 
-def find_yt_dlp_file(filename: str) -> str:
-    """Given input filename, find the corresponding yt-dlp file.
-    This is meant to account for inconsistent filename generation by yt-dlp.
-    """
-    pattern = re.search(
-        r'\[[-a-zA-Z0-9]*\]\.mp3', filename
-    ).group(0)
-    # NOTE: Skip first bracket to avoid problem with glob
-    path = [p for p in Path().rglob(f"*{pattern[1:]}")][0]
-    return str(path)
 
-
-def download_audio(url: str) -> tuple[Path, dict]:
+def download_audio(url: str) -> tuple[Path, YouTube]:
     """Extract audio from target video and return output path+metadata."""
-    ydl_opts = {
-    'format': 'mp3/bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-        }]
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        info = ydl.sanitize_info(info)
-        ydl.download([url])
-        # Filename generation broken (inconsistent spaces)
-        _filename = ydl.evaluate_outtmpl(
-            ydl.params['outtmpl']['default'],
-            info,
-        ).removesuffix(".webm") + ".mp3"
-        filename = find_yt_dlp_file(_filename)
 
-    return (Path(filename), info)
+    yt = YouTube(url)
+    audio_path = (
+        yt
+        .streams
+        .filter(only_audio=True, file_extension='mp4')
+        .order_by('abr')[-1]
+        .download(output_path=tempfile.gettempdir())
+    )
+
+    return (Path(audio_path), yt)
 
 
-def extract_subtitles(audio_file: Path) -> str:
-    """Extract subtitles from an audio file."""
+def extract_subtitles(audio_file: Path) -> tuple[str, str]:
+    """Extract subtitles and language from an audio file."""
 
     model = whisper.load_model("base")
     result = model.transcribe(str(audio_file))
-    return str(result["text"])
+    return (str(result["text"]), result['language'])
 
 
 def assign_topics(
@@ -137,8 +118,7 @@ def generate_summary(
     return summary
 
 
-def generate_logseq_page(summary: str, meta: dict, topics: Optional[list[str]]=None):
-    date = meta['upload_date']
+def generate_logseq_page(summary: str, yt: YouTube, topics: Optional[list[str]]=None):
     if not topics:
         topics_line = ""
     else:
@@ -150,29 +130,27 @@ author:: [[{author}]]
 date-published:: [[{date}]]
 description:: {description}
 tag:: {tags}
-category:: {categories}
 language:: {language}
-link:: {original_url}
+link:: {url}
 {topics}
 
 - # Summary
         - {summary}
 
 - # Video
-        - {{{{video {original_url}}}}}
+        - {{{{video {url}}}}}
 
 
     """.format(
         summary=summary,
         topics=topics_line,
-        title=meta['title'],
-        description=meta['description'].split('\n')[0],
-        author=meta['channel'],
-        tags=', '.join(meta['tags']),
-        categories=', '.join(meta['categories']),
-        language=meta['language'],
-        date=f"{date[:4]}-{date[4:6]}-{date[6:8]}",
-        original_url=meta["original_url"],
+        title=yt.title,
+        description=yt.description.split('\n')[0],
+        author=yt.author,
+        tags=', '.join(yt.keywords),
+        language=yt.language,
+        date=yt.publish_date.date(),
+        url=yt.watch_url,
     )
     return note 
 
@@ -182,15 +160,16 @@ if __name__ == '__main__':
     output_file = sys.argv[2]
 
     all_topics = gather_logseq_topics(LOGSEQ_DIR) if LOGSEQ_DIR else None
-    audio_path, yt_meta = download_audio(url)
-    sub_file = extract_subtitles(audio_path)
+    audio_path, yt = download_audio(url)
+    subtitles, language = extract_subtitles(audio_path)
 
     if all_topics:
-        topics = assign_topics(sub_file, tuple(all_topics))
+        topics = assign_topics(subtitles, tuple(all_topics))
     else:
         topics = None
-    summary = generate_summary(sub_file)
-    page = generate_logseq_page(summary, yt_meta, topics)
+    summary = generate_summary(subtitles)
+    yt.language = language
+    page = generate_logseq_page(summary, yt, topics)
     with open(output_file, "w") as out:
         out.write(page)
 
