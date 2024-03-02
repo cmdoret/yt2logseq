@@ -10,7 +10,7 @@ readme = "README.md"
 python = "^3.11"
 transformers = "^4.38"
 openai-whisper = "20231117"
-yt-dlp = "2023.12.30"
+pytube = "^15.0.0"
 
 
 [build-system]
