@@ -20,6 +20,9 @@ from pytube import YouTube
 from transformers import pipeline
 import whisper
 
+from yt2logseq.chains import make_mapreduce_chain
+from yt2logseq.srt import StampedSRTLoader
+
 LOGSEQ_DIR=os.environ.get("LOGSEQ_DIR")
 MAX_KEYWORDS=3
 MAX_SUMMARY_WORDS = 200
@@ -93,31 +96,6 @@ def assign_topics(
     ]
 
 
-def generate_summary(
-    text: str,
-    model="sshleifer/distilbart-cnn-12-6",
-    min_length=10,
-    max_length=MAX_SUMMARY_WORDS,
-) -> str:
-    """Generate a summary of text."""
-
-    summarizer = pipeline(
-        "summarization",
-        model=model,
-        min_length=min_length,
-        max_length=max_length,
-    )
-    summary = (
-        summarizer(
-            text,
-            truncation=True
-        )[0]["summary_text"]
-        .strip(' ')
-        .replace(' .', '.')
-    )
-    return summary
-
-
 def generate_logseq_page(summary: str, yt: YouTube, topics: Optional[list[str]]=None):
     if not topics:
         topics_line = ""
@@ -159,15 +137,16 @@ if __name__ == '__main__':
     url = sys.argv[1]
     output_file = sys.argv[2]
 
-    all_topics = gather_logseq_topics(LOGSEQ_DIR) if LOGSEQ_DIR else None
     audio_path, yt = download_audio(url)
     subtitles, language = extract_subtitles(audio_path)
-
-    if all_topics:
+    if LOGSEQ_DIR:
+        all_topics = gather_logseq_topics(LOGSEQ_DIR)
         topics = assign_topics(subtitles, tuple(all_topics))
     else:
         topics = None
-    summary = generate_summary(subtitles)
+    docs = StampedSRTLoader(file_path="", data=subtitles).load()
+    mapreduce_chain = make_mapreduce_chain()
+    summary = mapreduce_chain.invoke({'input_documents': docs})
     yt.language = language
     page = generate_logseq_page(summary, yt, topics)
     with open(output_file, "w") as out:
