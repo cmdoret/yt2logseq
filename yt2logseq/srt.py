@@ -62,11 +62,14 @@ class StampedSRTLoader(BaseLoader):
 def extract_timestamp(line: str) -> tuple[Optional[datetime.time], str]:
     """Extract timestamp and text from a line of srt."""
     # Should batch hh:mm:ss,mmm optionally surrounded by parentheses or square brackets
-    timestamp_pattern = r"(\[|\()?(\d{2}:\d{2}:\d{2},\d{3})(\]|\))?"
+    timestamp_pattern = r"(\[|\()?(\d{1}:\d{2}:\d{2},\d{3})(\]|\))?"
     try:
-        timestamp = re.search(timestamp_pattern, line).groups(1)[0]
+        timestamp = re.search(timestamp_pattern, line).groups()[1]
     except AttributeError:
         return (None, line)
-    time = datetime.datetime.strptime(timestamp, "%H:%M:%S,%f").time()
+    try:
+        time = datetime.datetime.strptime(timestamp, "%H:%M:%S,%f").time()
+    except ValueError:
+        return (None, line)
     text = re.sub(timestamp_pattern, "", line)
     return (time, text)

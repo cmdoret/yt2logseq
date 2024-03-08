@@ -49,8 +49,8 @@ def download_audio(url: str) -> tuple[Path, dict]:
         "author": yt.author,
         "description": yt.description.split("\n")[0],
         "tags": yt.keywords,
-        "date": yt.publish_date.date() if yt.publish_date else None,
-        "url": yt.watch_url,
+        "publish_date": yt.publish_date.date() if yt.publish_date else None,
+        "watch_url": yt.watch_url,
     }
 
     return (Path(audio_path), meta)

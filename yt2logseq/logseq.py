@@ -31,9 +31,9 @@ def format_timestamps(summary: str) -> Iterator[str]:
     """Format lines with embedded timestamps for logseq."""
     for line in summary.split("\n"):
         time, text = extract_timestamp(line)
+        text = re.sub("^ *- *", "", text)
         if time:
-            text = re.sub("^ *- *", "", text)
-            yield f"        - {{ youtube-timestamp {time.strftime('%H:%M:%S')} }} {text}"
+            yield f"        - {{{{youtube-timestamp {time.strftime('%H:%M:%S')}}}}} {text}"
         else:
             yield f"        - {text}"
 
