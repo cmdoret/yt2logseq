@@ -32,17 +32,43 @@ MAX_SUMMARY_WORDS = 200
 
 
 
-def download_audio(url: str) -> tuple[Path, dict]:
-    """Extract audio from target video and return output path+metadata."""
+def extract_subtitles(url: str) -> tuple[str, dict]:
+    """Download audio and extract subtitles and metadata
+    from target video return output path+metadata. subtitles
+    are generated using openai's whisper model.
+
+    Parameters
+    ----------
+    url
+        The url of the video to process.
+
+    Returns
+    -------
+    tuple[str, dict]
+        The subtitles text (srt format) and video metadata.
+    """
 
     yt = YouTube(url)
-    audio_path = (
+    audio_path = Path(
         yt
         .streams
         .filter(only_audio=True, file_extension='mp4')
         .order_by('abr')[-1]
         .download(output_path=tempfile.gettempdir())
     )
+
+    model = whisper.load_model("base")
+    result = model.transcribe(
+        str(audio_path),
+    )
+    writer = get_writer(output_format='srt', output_dir=str(audio_path.parent))
+    writer(
+        result,
+        audio_path,
+        {"max_line_width":55, "max_line_count":2, "highlight_words":False}
+    )
+    subtitle_path = audio_path.with_suffix(".srt")
+    subtitles = open(subtitle_path, 'r').read()
 
     meta = {
         "title": yt.title,
@@ -51,26 +77,13 @@ def download_audio(url: str) -> tuple[Path, dict]:
         "tags": yt.keywords,
         "publish_date": yt.publish_date.date() if yt.publish_date else None,
         "watch_url": yt.watch_url,
+        "language": result['language'],
     }
+    os.remove(audio_path)
+    os.remove(subtitle_path)
 
-    return (Path(audio_path), meta)
+    return (subtitles, meta)
 
-
-def extract_subtitles(audio_file: Path) -> tuple[str, str]:
-    """Extract subtitles and language from an audio file."""
-
-    model = whisper.load_model("base")
-    result = model.transcribe(
-        str(audio_file),
-    )
-    writer = get_writer(output_format='srt', output_dir=".")
-    writer(
-        result,
-        audio_file,
-        {"max_line_width":55, "max_line_count":2, "highlight_words":False}
-    )
-    subtitles = open(audio_file.with_suffix(".srt").name, 'r').read()
-    return (subtitles, result['language'])
 
 
 def assign_topics(
@@ -102,9 +115,7 @@ if __name__ == '__main__':
     url = sys.argv[1]
     output_file = sys.argv[2]
 
-    audio_path, meta = download_audio(url)
-    subtitles, language = extract_subtitles(audio_path)
-    meta['language'] = language
+    subtitles, meta = extract_subtitles(url)
     if LOGSEQ_DIR:
         all_topics = gather_logseq_topics(LOGSEQ_DIR)
         meta["topics"] = assign_topics(subtitles, tuple(all_topics))
