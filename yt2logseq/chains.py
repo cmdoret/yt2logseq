@@ -4,19 +4,10 @@ from langchain.chains import LLMChain, MapReduceDocumentsChain, ReduceDocumentsC
 from langchain.prompts import PromptTemplate
 from langchain.chains.combine_documents.stuff import StuffDocumentsChain
 from langchain_openai import ChatOpenAI
-from langchain_text_splitters import CharacterTextSplitter
 
+from yt2logseq.prompts import MAP_TMPL, REDUCE_TMPL
 from yt2logseq.srt import StampedSRTLoader
 
-MAP_TMPL = """The following are time-stamped captions in srt format.
-{docs}
-Based on these captions, please select and summarize the important information as bullet points in markdown format, making sure to include the original timestamp from the original caption where the information comes from..
-Markdown summary:"""
-
-REDUCE_TMPL = """The following is set of summaries based on a video:
-{docs}
-Take these and distill it into a final, consolidated summary. Discard information that is not relevant. Retain the original time-stamps whenever it makes sense.
-Markdown summary:"""
 llm = ChatOpenAI(temperature=0)
 
 def make_map_chain() -> LLMChain:
@@ -50,10 +41,15 @@ def make_mapreduce_chain() -> MapReduceDocumentsChain:
         return_intermediate_steps=False,
     )
 
-
-if __name__ == '__main__':
-    loader = StampedSRTLoader(sys.argv[1])
+def summarize_subtitles(subs: str) -> str:
+    loader = StampedSRTLoader(file_path="", data=subs)
     docs = loader.load()
     mapreduce_chain = make_mapreduce_chain()
     result = mapreduce_chain.invoke({'input_documents': docs})
-    print(result['output_text'])
+    return result['output_text']
+
+if __name__ == '__main__':
+    sub = open(sys.argv[1]).read()
+    summary = summarize_subtitles(sub)
+    print(summary)
+
