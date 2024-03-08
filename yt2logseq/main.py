@@ -19,39 +19,37 @@ from typing import Iterator, Optional
 from pytube import YouTube
 from transformers import pipeline
 import whisper
+from whisper.utils import get_writer
 
-LOGSEQ_DIR=os.environ.get("LOGSEQ_DIR")
+from yt2logseq.chains import summarize_subtitles
+from yt2logseq.logseq import gather_logseq_topics, generate_logseq_page
+
+LOGSEQ_DIR = os.environ.get("LOGSEQ_DIR")
 MAX_KEYWORDS=3
 MAX_SUMMARY_WORDS = 200
 
 
-def parse_topics_line(line: str) -> Iterator[str]:
-    """Parse a property line with topics in a line."""
-    # functionally equivalent to ripgrep -f "topic::" $LOGSEQ_DIR
-    values = line.split("::")[1].strip()
-    for value in values.split(","):
-        yield value.strip().strip("[]")
-
-
-def gather_logseq_topics(logseq_dir: Path) -> set[str]:
-    """Gather all topics from existing logseq notes."""
-    topics = set()
-    for file in Path(logseq_dir).rglob("*.md"):
-        with open(file, "r") as f:
-            for line in f:
-                if "topic::" in line:
-                    line_topics = parse_topics_line(line)
-                    topics |= set(line_topics)
-
-    return topics
 
 
 
-def download_audio(url: str) -> tuple[Path, YouTube]:
-    """Extract audio from target video and return output path+metadata."""
+def extract_subtitles(url: str) -> tuple[str, dict]:
+    """Download audio and extract subtitles and metadata
+    from target video return output path+metadata. subtitles
+    are generated using openai's whisper model.
+
+    Parameters
+    ----------
+    url
+        The url of the video to process.
+
+    Returns
+    -------
+    tuple[str, dict]
+        The subtitles text (srt format) and video metadata.
+    """
 
     yt = YouTube(url)
-    audio_path = (
+    audio_path = Path(
         yt
         .streams
         .filter(only_audio=True, file_extension='mp4')
@@ -59,15 +57,33 @@ def download_audio(url: str) -> tuple[Path, YouTube]:
         .download(output_path=tempfile.gettempdir())
     )
 
-    return (Path(audio_path), yt)
-
-
-def extract_subtitles(audio_file: Path) -> tuple[str, str]:
-    """Extract subtitles and language from an audio file."""
-
     model = whisper.load_model("base")
-    result = model.transcribe(str(audio_file))
-    return (str(result["text"]), result['language'])
+    result = model.transcribe(
+        str(audio_path),
+    )
+    writer = get_writer(output_format='srt', output_dir=str(audio_path.parent))
+    writer(
+        result,
+        audio_path,
+        {"max_line_width":55, "max_line_count":2, "highlight_words":False}
+    )
+    subtitle_path = audio_path.with_suffix(".srt")
+    subtitles = open(subtitle_path, 'r').read()
+
+    meta = {
+        "title": yt.title,
+        "author": yt.author,
+        "description": yt.description.split("\n")[0],
+        "tags": yt.keywords,
+        "publish_date": yt.publish_date.date() if yt.publish_date else None,
+        "watch_url": yt.watch_url,
+        "language": result['language'],
+    }
+    os.remove(audio_path)
+    os.remove(subtitle_path)
+
+    return (subtitles, meta)
+
 
 
 def assign_topics(
@@ -93,83 +109,18 @@ def assign_topics(
     ]
 
 
-def generate_summary(
-    text: str,
-    model="sshleifer/distilbart-cnn-12-6",
-    min_length=10,
-    max_length=MAX_SUMMARY_WORDS,
-) -> str:
-    """Generate a summary of text."""
-
-    summarizer = pipeline(
-        "summarization",
-        model=model,
-        min_length=min_length,
-        max_length=max_length,
-    )
-    summary = (
-        summarizer(
-            text,
-            truncation=True
-        )[0]["summary_text"]
-        .strip(' ')
-        .replace(' .', '.')
-    )
-    return summary
-
-
-def generate_logseq_page(summary: str, yt: YouTube, topics: Optional[list[str]]=None):
-    if not topics:
-        topics_line = ""
-    else:
-        topics_line = "topic:: " + ', '.join([f"[[{t}]]" for t in topics]) 
-    note = """
-type:: [[video]]
-title:: {title}
-author:: [[{author}]]
-date-published:: [[{date}]]
-description:: {description}
-tag:: {tags}
-language:: {language}
-link:: {url}
-{topics}
-
-- # Summary
-        - {summary}
-
-- # Video
-        - {{{{video {url}}}}}
-
-
-    """.format(
-        summary=summary,
-        topics=topics_line,
-        title=yt.title,
-        description=yt.description.split('\n')[0],
-        author=yt.author,
-        tags=', '.join(yt.keywords),
-        language=yt.language,
-        date=yt.publish_date.date(),
-        url=yt.watch_url,
-    )
-    return note 
 
 
 if __name__ == '__main__':
     url = sys.argv[1]
     output_file = sys.argv[2]
 
-    all_topics = gather_logseq_topics(LOGSEQ_DIR) if LOGSEQ_DIR else None
-    audio_path, yt = download_audio(url)
-    subtitles, language = extract_subtitles(audio_path)
-
-    if all_topics:
-        topics = assign_topics(subtitles, tuple(all_topics))
-    else:
-        topics = None
-    summary = generate_summary(subtitles)
-    yt.language = language
-    page = generate_logseq_page(summary, yt, topics)
+    subtitles, meta = extract_subtitles(url)
+    if LOGSEQ_DIR:
+        all_topics = gather_logseq_topics(LOGSEQ_DIR)
+        meta["topics"] = assign_topics(subtitles, tuple(all_topics))
+    summary = summarize_subtitles(subtitles)
+    page = generate_logseq_page(summary, meta)
     with open(output_file, "w") as out:
         out.write(page)
 
