@@ -72,4 +72,5 @@ def extract_timestamp(line: str) -> tuple[Optional[datetime.time], str]:
     except ValueError:
         return (None, line)
     text = re.sub(timestamp_pattern, "", line)
+    text = re.sub(r"\(0( - 0)? *$", "", text)
     return (time, text)
