@@ -16,6 +16,7 @@ import sys
 import tempfile
 from typing import Iterator, Optional
 
+import openai
 from pytube import YouTube
 from transformers import pipeline
 import whisper
@@ -89,25 +90,31 @@ def extract_subtitles(url: str) -> tuple[str, dict]:
 def assign_topics(
     text: str,
     topics: tuple[str],
-    model: str="facebook/bart-large-mnli",
     max_keywords: int = MAX_KEYWORDS,
-    min_score: float=0.95,
-):
+    ) -> list[str]:
     """Assign topics to a text and return top keywords."""
-    classifier = pipeline(
-        "zero-shot-classification",
-        model=model
+    client = openai.OpenAI()
+    completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": f"Here is some text:\n{text}\nPlease assign a topic among the following: {topics}. Just give me the relevant topic and say nothing else."
+            }
+        ],
+        model="gpt-4o",
+        logprobs=True,
+        top_logprobs=max_keywords + 5,
     )
-    kws = classifier(text, topics, multi_label=True)
-    # Pick top <=3 fields above threshold
+    try:
+        next_token_probs = completion.choices[0].logprobs.content[0].top_logprobs
+    except (TypeError, IndexError):
+        return []
     return [
-        kw
-        for kw, score
-        in zip(kws["labels"], kws["scores"])
-        if score >= min_score][
-        :max_keywords
-    ]
-
+        choice.token 
+        for choice
+        in sorted(next_token_probs, key=lambda x: x.logprob)
+        if choice.token in topics
+    ][:max_keywords]
 
 
 
@@ -118,7 +125,7 @@ if __name__ == '__main__':
     subtitles, meta = extract_subtitles(url)
     if LOGSEQ_DIR:
         all_topics = gather_logseq_topics(LOGSEQ_DIR)
-        meta["topics"] = assign_topics(subtitles, tuple(all_topics))
+        meta["topics"] = assign_topics(f'{meta["title"]}\n{meta["description"]}', tuple(all_topics))
     summary = summarize_subtitles(subtitles)
     page = generate_logseq_page(summary, meta)
     with open(output_file, "w") as out:
