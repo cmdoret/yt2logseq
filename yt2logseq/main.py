@@ -98,10 +98,10 @@ def assign_topics(
         messages=[
             {
                 "role": "user",
-                "content": f"Here is some text:\n{text}\nPlease assign a topic among the following: {topics}"
+                "content": f"Here is some text:\n{text}\nPlease assign a topic among the following: {topics}. Just give me the relevant topic and say nothing else."
             }
         ],
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         logprobs=True,
         top_logprobs=max_keywords + 5,
     )

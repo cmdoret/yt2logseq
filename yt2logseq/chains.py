@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from yt2logseq.prompts import MAP_TMPL, REDUCE_TMPL
 from yt2logseq.srt import StampedSRTLoader
 
-llm = ChatOpenAI(temperature=0)
+llm = ChatOpenAI(temperature=0, model="gpt-4o")
 
 def make_map_chain() -> LLMChain:
     map_prompt = PromptTemplate.from_template(MAP_TMPL)
