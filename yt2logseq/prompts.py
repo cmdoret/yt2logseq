@@ -6,5 +6,5 @@ Markdown summary:"""
 
 REDUCE_TMPL = """The following is set of summaries based on a video:
 {docs}
-Distill these into a final, consolidated summary. Discard information that is not relevant. Always retain the original time-stamps.
+Distill these into a final, consolidated summary. Discard redundant and irrelevant information. Always retain the original time-stamps.
 Markdown summary:"""
